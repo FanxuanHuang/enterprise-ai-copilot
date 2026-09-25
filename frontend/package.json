@@ -1,0 +1,26 @@
+{
+  "name": "enterprise-ai-copilot-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.5",
+    "@vitejs/plugin-react": "4.3.4",
+    "eslint": "9.39.5",
+    "typescript": "5.7.2",
+    "typescript-eslint": "8.70.1",
+    "vite": "6.4.3",
+    "@types/react": "18.3.18",
+    "@types/react-dom": "18.3.5"
+  }
+}
