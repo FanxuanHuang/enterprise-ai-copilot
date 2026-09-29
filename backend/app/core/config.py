@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -6,7 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     app_name: str = "Enterprise AI Copilot"
-    app_version: str = "0.1.0"
+    app_version: str = "0.3.0"
 
     deepseek_api_key: str = Field(default="", alias="DEEPSEEK_API_KEY")
     deepseek_base_url: str = Field(
@@ -18,6 +19,34 @@ class Settings(BaseSettings):
         default="http://localhost:5173",
         alias="FRONTEND_ORIGIN",
     )
+    max_revision_count: int = Field(
+        default=2,
+        ge=0,
+        alias="MAX_REVISION_COUNT",
+    )
+    knowledge_top_k: int = Field(default=3, ge=1, alias="KNOWLEDGE_TOP_K")
+    knowledge_min_score: float = Field(
+        default=0.5,
+        ge=-1.0,
+        le=1.0,
+        alias="KNOWLEDGE_MIN_SCORE",
+    )
+    embedding_model: str = Field(
+        default="BAAI/bge-small-zh-v1.5",
+        alias="EMBEDDING_MODEL",
+    )
+
+    @property
+    def backend_dir(self) -> Path:
+        return Path(__file__).resolve().parents[2]
+
+    @property
+    def knowledge_base_dir(self) -> Path:
+        return self.backend_dir / "knowledge_base"
+
+    @property
+    def knowledge_index_path(self) -> Path:
+        return self.backend_dir / "data" / "knowledge_index.json"
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -32,4 +61,3 @@ def get_settings() -> Settings:
 
 
 settings = get_settings()
-

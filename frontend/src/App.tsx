@@ -54,7 +54,7 @@ export default function App() {
             <p className="eyebrow">Enterprise AI Copilot</p>
             <h1>企业 AI 助手</h1>
           </div>
-          <span className="version-badge">V1</span>
+          <span className="version-badge">V3</span>
         </header>
 
         <MessageList messages={messages} isLoading={isLoading} />
@@ -64,4 +64,3 @@ export default function App() {
     </main>
   );
 }
-

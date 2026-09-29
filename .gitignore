@@ -28,8 +28,10 @@ pnpm-debug.log*
 frontend/dist/
 frontend/.vite/
 
+# Generated local knowledge index
+backend/data/knowledge_index.json
+
 # IDE / OS
 .DS_Store
 .idea/
 .vscode/
-
