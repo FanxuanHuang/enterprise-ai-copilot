@@ -19,6 +19,21 @@ React + TypeScript
 
 V4 保留 V1 API、V2 revision loop 和 V3 RAG，并让模型判断何时需要企业工具。模型只生成 Tool Call，真正的权限检查、参数校验、数据库查询和写入全部由 Python 完成。当前仍不包含 MCP、复杂长期 Memory、完整认证/RBAC、PostgreSQL、Docker、微服务或 Multi-Agent。
 
+## 异步调用链
+
+FastAPI 聊天路由、LangGraph LLM 节点、Workflow 调用和 DeepSeek OpenAI-compatible 请求使用原生 `async/await`：
+
+```text
+async POST /api/chat
+  -> await run_workflow
+  -> await workflow.ainvoke
+  -> async Analyze / Plan / Agent Decide / Review / Finalize
+  -> AsyncOpenAI
+  -> await chat.completions.create
+```
+
+现有 SQLite、Repository、Tool Dispatcher 和本地 Embedding 仍是同步实现。为避免它们阻塞 FastAPI event loop，数据库初始化、会话持久化、知识检索和 Tool 执行通过 `asyncio.to_thread` 运行。共享 FastEmbed 模型的查询使用锁串行执行，避免未知的跨线程模型安全问题，但不会占用 event loop。轻量的 LangGraph 路由、状态转换、JSON/Pydantic 数据组装保持同步。
+
 ## 当前 V4 架构
 
 - `frontend/`: React + TypeScript + Vite 聊天界面

@@ -1,6 +1,7 @@
 import json
 import logging
 import math
+import threading
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Protocol, Sequence
@@ -179,6 +180,7 @@ class KnowledgeService:
         self.model_name = model_name or settings.embedding_model
         self._embedding_model = embedding_model
         self._index: dict[str, object] | None = None
+        self._search_lock = threading.Lock()
 
     @property
     def embedding_model(self) -> EmbeddingModel:
@@ -252,6 +254,13 @@ class KnowledgeService:
         return index
 
     def search(self, query: str, top_k: int) -> list[SearchResult]:
+        # FastEmbed is shared by requests. Keep inference serialized inside the
+        # worker pool unless the selected backend explicitly guarantees that a
+        # single model instance is safe for concurrent calls.
+        with self._search_lock:
+            return self._search(query, top_k)
+
+    def _search(self, query: str, top_k: int) -> list[SearchResult]:
         if not query.strip():
             raise ValueError("query must not be empty")
         if top_k < 1:

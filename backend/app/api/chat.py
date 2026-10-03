@@ -1,3 +1,4 @@
+import asyncio
 import sqlite3
 from uuid import uuid4
 
@@ -15,28 +16,31 @@ router = APIRouter()
 
 
 @router.post("/chat", response_model=ChatResponse)
-def chat(payload: ChatRequest, request: Request) -> ChatResponse:
+async def chat(payload: ChatRequest, request: Request) -> ChatResponse:
     session_id = payload.session_id or str(uuid4())
     request_id = getattr(request.state, "request_id", str(uuid4()))
     try:
-        history = conversation_service.get_history(
+        history = await asyncio.to_thread(
+            conversation_service.get_history,
             session_id,
             user_id=payload.user_id,
         )
-        conversation_service.add_message(
+        await asyncio.to_thread(
+            conversation_service.add_message,
             session_id=session_id,
             user_id=payload.user_id,
             role="user",
             content=payload.message,
         )
-        answer = run_workflow(
+        answer = await run_workflow(
             payload.message,
             session_id=session_id,
             user_id=payload.user_id,
             request_id=request_id,
             conversation_history=history,
         )
-        conversation_service.add_message(
+        await asyncio.to_thread(
+            conversation_service.add_message,
             session_id=session_id,
             user_id=payload.user_id,
             role="assistant",

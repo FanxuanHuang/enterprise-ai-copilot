@@ -7,9 +7,9 @@ from app.services.knowledge_service import SearchResult
 from app.services.llm_service import AgentDecision
 
 
-class RagWorkflowTests(unittest.TestCase):
+class RagWorkflowTests(unittest.IsolatedAsyncioTestCase):
     @staticmethod
-    def _structured_response(system_prompt, user_prompt, response_model):
+    async def _structured_response(system_prompt, user_prompt, response_model):
         del system_prompt, user_prompt
         if response_model is AnalysisOutput:
             return AnalysisOutput(
@@ -38,10 +38,15 @@ class RagWorkflowTests(unittest.TestCase):
             )
         raise AssertionError(f"Unexpected response model: {response_model}")
 
-    def test_workflow_passes_retrieved_context_to_execute(self):
+    async def test_workflow_passes_retrieved_context_to_execute(self):
         text_prompts: list[str] = []
 
-        def generate_agent_decision(system_prompt, messages, tools, allow_tools):
+        async def generate_agent_decision(
+            system_prompt,
+            messages,
+            tools,
+            allow_tools,
+        ):
             del system_prompt, tools, allow_tools
             text_prompts.append(messages[0]["content"])
             return AgentDecision(
@@ -73,14 +78,14 @@ class RagWorkflowTests(unittest.TestCase):
                 return_value=[result],
             ) as search,
         ):
-            state = invoke_workflow("新员工多久可以申请远程办公？")
+            state = await invoke_workflow("新员工多久可以申请远程办公？")
 
         search.assert_called_once_with("新员工 远程办公 申请资格 入职时间", 3)
         self.assertIn("满 90 个自然日", text_prompts[0])
         self.assertEqual(state["sources"], ["remote_work_policy.md"])
         self.assertIn("Sources:\n- remote_work_policy.md", state["final_answer"])
 
-    def test_insufficient_knowledge_returns_guarded_answer_without_generation(self):
+    async def test_insufficient_knowledge_returns_guarded_answer_without_generation(self):
         weak_result = SearchResult(
             content="无关内容",
             source="travel_policy.md",
@@ -101,7 +106,7 @@ class RagWorkflowTests(unittest.TestCase):
                 return_value=[weak_result],
             ),
         ):
-            state = invoke_workflow("公司的宠物保险政策是什么？")
+            state = await invoke_workflow("公司的宠物保险政策是什么？")
 
         generate_text.assert_not_called()
         generate_agent_decision.assert_not_called()

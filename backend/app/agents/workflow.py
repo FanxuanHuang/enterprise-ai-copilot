@@ -1,3 +1,4 @@
+import asyncio
 from typing import Literal, cast
 from uuid import uuid4
 
@@ -87,7 +88,7 @@ def build_workflow() -> CompiledStateGraph:
 workflow = build_workflow()
 
 
-def invoke_workflow(
+async def invoke_workflow(
     user_input: str,
     *,
     session_id: str | None = None,
@@ -107,8 +108,8 @@ def invoke_workflow(
     }
     token = set_request_id(resolved_request_id)
     try:
-        database.initialize()
-        return cast(AgentState, workflow.invoke(initial_state))
+        await asyncio.to_thread(database.initialize)
+        return cast(AgentState, await workflow.ainvoke(initial_state))
     except LLMServiceError:
         raise
     except KnowledgeServiceError as exc:
@@ -119,7 +120,7 @@ def invoke_workflow(
         reset_request_id(token)
 
 
-def run_workflow(
+async def run_workflow(
     user_input: str,
     *,
     session_id: str | None = None,
@@ -127,7 +128,7 @@ def run_workflow(
     request_id: str | None = None,
     conversation_history: list[dict[str, str]] | None = None,
 ) -> str:
-    result = invoke_workflow(
+    result = await invoke_workflow(
         user_input,
         session_id=session_id,
         user_id=user_id,

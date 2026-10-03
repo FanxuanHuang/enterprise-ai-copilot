@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from typing import Any
@@ -58,7 +59,7 @@ class ReviewOutput(BaseModel):
     improvement_instructions: list[str]
 
 
-def analyze_node(state: AgentState) -> dict[str, object]:
+async def analyze_node(state: AgentState) -> dict[str, object]:
     logger.info("request_id=%s stage=analyze", state["request_id"])
     system_prompt = (
         f"{BASE_SYSTEM_PROMPT} Analyze the user's enterprise task. "
@@ -75,7 +76,7 @@ def analyze_node(state: AgentState) -> dict[str, object]:
         "and public-knowledge tasks do not need enterprise retrieval. "
         "Do not solve the task yet. Respond in JSON."
     )
-    result = llm_service.generate_structured(
+    result = await llm_service.generate_structured(
         system_prompt=system_prompt,
         user_prompt=state["user_input"],
         response_model=AnalysisOutput,
@@ -97,14 +98,14 @@ def analyze_node(state: AgentState) -> dict[str, object]:
     }
 
 
-def plan_node(state: AgentState) -> dict[str, list[PlanStep]]:
+async def plan_node(state: AgentState) -> dict[str, list[PlanStep]]:
     logger.info("request_id=%s stage=plan", state["request_id"])
     system_prompt = (
         f"{BASE_SYSTEM_PROMPT} Create a concise, actionable execution plan "
         "from the supplied task analysis. Do not write the final answer. "
         "Respond in JSON."
     )
-    result = llm_service.generate_structured(
+    result = await llm_service.generate_structured(
         system_prompt=system_prompt,
         user_prompt=json.dumps(state["analysis"], ensure_ascii=False),
         response_model=PlanOutput,
@@ -113,7 +114,7 @@ def plan_node(state: AgentState) -> dict[str, list[PlanStep]]:
     return {"plan": plan}
 
 
-def knowledge_retrieval_node(state: AgentState) -> dict[str, object]:
+async def knowledge_retrieval_node(state: AgentState) -> dict[str, object]:
     logger.info(
         "request_id=%s stage=knowledge_retrieval",
         state["request_id"],
@@ -129,7 +130,11 @@ def knowledge_retrieval_node(state: AgentState) -> dict[str, object]:
 
     retrieval_query = state.get("retrieval_query") or state["user_input"]
     with log_latency(logger, event="knowledge_retrieval"):
-        results = knowledge_service.search(retrieval_query, settings.knowledge_top_k)
+        results = await asyncio.to_thread(
+            knowledge_service.search,
+            retrieval_query,
+            settings.knowledge_top_k,
+        )
     retrieved_chunks = [
         {
             "content": result.content,
@@ -195,7 +200,7 @@ def _initial_agent_messages(state: AgentState) -> list[dict[str, Any]]:
     ]
 
 
-def agent_decide_node(state: AgentState) -> dict[str, object]:
+async def agent_decide_node(state: AgentState) -> dict[str, object]:
     logger.info(
         "request_id=%s stage=agent_decide tool_iteration_count=%d "
         "revision_count=%d",
@@ -234,7 +239,7 @@ def agent_decide_node(state: AgentState) -> dict[str, object]:
         "dates, costs, budgets, statuses, identifiers, or other business-record "
         "fields that are absent from successful tool results."
     )
-    decision = llm_service.generate_agent_decision(
+    decision = await llm_service.generate_agent_decision(
         system_prompt=system_prompt,
         messages=messages,
         tools=tool_registry.schemas(),
@@ -308,7 +313,7 @@ def agent_decide_node(state: AgentState) -> dict[str, object]:
     }
 
 
-def tool_execution_node(state: AgentState) -> dict[str, object]:
+async def tool_execution_node(state: AgentState) -> dict[str, object]:
     next_iteration = state["tool_iteration_count"] + 1
     logger.info(
         "request_id=%s stage=tool_execution tool_iteration_count=%d "
@@ -360,7 +365,8 @@ def tool_execution_node(state: AgentState) -> dict[str, object]:
                 data=previous_result["data"],
             )
         else:
-            result = tool_registry.dispatch(
+            result = await asyncio.to_thread(
+                tool_registry.dispatch,
                 tool_call_id=tool_call["tool_call_id"],
                 tool_name=tool_call["name"],
                 arguments_json=tool_call["arguments"],
@@ -429,7 +435,7 @@ def prepare_revision_node(state: AgentState) -> dict[str, object]:
     }
 
 
-def review_node(state: AgentState) -> dict[str, object]:
+async def review_node(state: AgentState) -> dict[str, object]:
     logger.info(
         "request_id=%s stage=review tool_iteration_count=%d revision_count=%d",
         state["request_id"],
@@ -455,7 +461,7 @@ def review_node(state: AgentState) -> dict[str, object]:
         "other business-record field that is absent from the tool results. "
         "Respond in JSON."
     )
-    result = llm_service.generate_structured(
+    result = await llm_service.generate_structured(
         system_prompt=system_prompt,
         user_prompt=json.dumps(review_context, ensure_ascii=False),
         response_model=ReviewOutput,
@@ -471,7 +477,7 @@ def review_node(state: AgentState) -> dict[str, object]:
     }
 
 
-def finalize_node(state: AgentState) -> dict[str, str]:
+async def finalize_node(state: AgentState) -> dict[str, str]:
     logger.info(
         "request_id=%s stage=finalize tool_iteration_count=%d revision_count=%d",
         state["request_id"],
@@ -491,7 +497,7 @@ def finalize_node(state: AgentState) -> dict[str, str]:
         "budget, status, identifier, or other record field from the draft. Do "
         "not add or modify source citations."
     )
-    final_answer = llm_service.generate_text(
+    final_answer = await llm_service.generate_text(
         system_prompt=system_prompt,
         user_prompt=json.dumps(
             {

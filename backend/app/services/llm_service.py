@@ -2,7 +2,7 @@ import json
 from dataclasses import dataclass
 from typing import Any, TypeVar
 
-from openai import APIError, OpenAI
+from openai import APIError, AsyncOpenAI
 from pydantic import BaseModel, ValidationError
 
 from app.core.config import settings
@@ -30,12 +30,12 @@ class AgentDecision:
 
 class LLMService:
     def __init__(self) -> None:
-        self.client = OpenAI(
+        self.client = AsyncOpenAI(
             api_key=settings.deepseek_api_key,
             base_url=settings.deepseek_base_url,
         )
 
-    def _create_completion(
+    async def _create_completion(
         self,
         messages: list[dict[str, Any]],
         *,
@@ -52,7 +52,7 @@ class LLMService:
             if response_format is not None:
                 request_options["response_format"] = response_format
 
-            response = self.client.chat.completions.create(**request_options)
+            response = await self.client.chat.completions.create(**request_options)
         except APIError as exc:
             raise LLMServiceError("DeepSeek API request failed.") from exc
         except Exception as exc:
@@ -64,7 +64,7 @@ class LLMService:
 
         return answer
 
-    def generate_agent_decision(
+    async def generate_agent_decision(
         self,
         *,
         system_prompt: str,
@@ -85,7 +85,7 @@ class LLMService:
             "tool_choice": "auto" if allow_tools else "none",
         }
         try:
-            response = self.client.chat.completions.create(**request_options)
+            response = await self.client.chat.completions.create(**request_options)
         except APIError as exc:
             raise LLMServiceError("DeepSeek API request failed.") from exc
         except Exception as exc:
@@ -107,15 +107,15 @@ class LLMService:
             raise LLMServiceError("DeepSeek returned an empty agent decision.")
         return AgentDecision(content=content, tool_calls=tool_calls)
 
-    def generate_text(self, system_prompt: str, user_prompt: str) -> str:
-        return self._create_completion(
+    async def generate_text(self, system_prompt: str, user_prompt: str) -> str:
+        return await self._create_completion(
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ]
         )
 
-    def generate_structured(
+    async def generate_structured(
         self,
         system_prompt: str,
         user_prompt: str,
@@ -127,7 +127,7 @@ class LLMService:
             "Return only one valid JSON object matching this JSON schema:\n"
             f"{schema}"
         )
-        content = self._create_completion(
+        content = await self._create_completion(
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": json_prompt},
@@ -142,9 +142,9 @@ class LLMService:
                 "DeepSeek returned an invalid structured response."
             ) from exc
 
-    def generate_answer(self, message: str) -> str:
+    async def generate_answer(self, message: str) -> str:
         """Keep the V1 service method available for simple direct calls."""
-        return self.generate_text(
+        return await self.generate_text(
             "You are a helpful enterprise AI copilot.",
             message,
         )

@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import time
 from contextlib import asynccontextmanager
@@ -21,7 +22,7 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    database.initialize()
+    await asyncio.to_thread(database.initialize)
     yield
 
 app = FastAPI(

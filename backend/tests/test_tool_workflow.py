@@ -13,10 +13,10 @@ from app.tools.registry import build_tool_registry
 from app.tools.schemas import ToolResult
 
 
-class ToolWorkflowTests(unittest.TestCase):
+class ToolWorkflowTests(unittest.IsolatedAsyncioTestCase):
     @staticmethod
     def structured_response(needs_retrieval=False):
-        def generate_structured(system_prompt, user_prompt, response_model):
+        async def generate_structured(system_prompt, user_prompt, response_model):
             del system_prompt, user_prompt
             if response_model is AnalysisOutput:
                 return AnalysisOutput(
@@ -47,10 +47,10 @@ class ToolWorkflowTests(unittest.TestCase):
 
         return generate_structured
 
-    def test_tool_result_is_returned_to_agent_for_next_decision(self):
+    async def test_tool_result_is_returned_to_agent_for_next_decision(self):
         decisions = []
 
-        def decide(**kwargs):
+        async def decide(**kwargs):
             decisions.append(kwargs)
             if len(decisions) == 1:
                 return AgentDecision(
@@ -94,7 +94,7 @@ class ToolWorkflowTests(unittest.TestCase):
                 return_value="员工 E1001 属于研发部门，职级为 P6。",
             ) as generate_text,
         ):
-            state = invoke_workflow("查询员工 E1001 的部门和职级")
+            state = await invoke_workflow("查询员工 E1001 的部门和职级")
 
         dispatch.assert_called_once()
         self.assertEqual(state["tool_iteration_count"], 1)
@@ -103,10 +103,10 @@ class ToolWorkflowTests(unittest.TestCase):
         self.assertIn("tool_results", generate_text.call_args.kwargs["user_prompt"])
         self.assertIn("研发", generate_text.call_args.kwargs["user_prompt"])
 
-    def test_tool_loop_stops_at_configured_maximum(self):
+    async def test_tool_loop_stops_at_configured_maximum(self):
         call_number = 0
 
-        def decide(**kwargs):
+        async def decide(**kwargs):
             nonlocal call_number
             call_number += 1
             return AgentDecision(
@@ -144,17 +144,17 @@ class ToolWorkflowTests(unittest.TestCase):
                 return_value="已达到工具执行安全上限。",
             ),
         ):
-            state = invoke_workflow("不断查询")
+            state = await invoke_workflow("不断查询")
 
         self.assertEqual(dispatch.call_count, 2)
         self.assertEqual(state["tool_iteration_count"], 2)
         self.assertTrue(state["tool_limit_reached"])
         self.assertIn("安全上限", state["draft"])
 
-    def test_repeated_successful_tool_call_reuses_result(self):
+    async def test_repeated_successful_tool_call_reuses_result(self):
         call_number = 0
 
-        def decide(**kwargs):
+        async def decide(**kwargs):
             nonlocal call_number
             call_number += 1
             if call_number <= 2:
@@ -196,7 +196,7 @@ class ToolWorkflowTests(unittest.TestCase):
                 return_value="申请已创建。",
             ),
         ):
-            state = invoke_workflow("创建上海 3 天出差申请")
+            state = await invoke_workflow("创建上海 3 天出差申请")
 
         dispatch.assert_called_once()
         self.assertEqual(state["tool_iteration_count"], 2)
@@ -206,10 +206,10 @@ class ToolWorkflowTests(unittest.TestCase):
             "TRIP-2026-002",
         )
 
-    def test_rag_context_and_tool_execution_work_together(self):
+    async def test_rag_context_and_tool_execution_work_together(self):
         prompts = []
 
-        def decide(**kwargs):
+        async def decide(**kwargs):
             prompts.append(kwargs["messages"])
             if len(prompts) == 1:
                 self.assertIn("至少在出发前 3 个工作日", kwargs["messages"][0]["content"])
@@ -262,7 +262,7 @@ class ToolWorkflowTests(unittest.TestCase):
                     ),
                 ),
             ):
-                state = invoke_workflow(
+                state = await invoke_workflow(
                     "根据差旅政策，为 E1001 创建上海 3 天出差申请"
                 )
 

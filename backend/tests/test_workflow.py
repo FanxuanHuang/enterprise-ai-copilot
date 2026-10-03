@@ -6,9 +6,9 @@ from app.agents.workflow import invoke_workflow
 from app.services.llm_service import AgentDecision
 
 
-class WorkflowTests(unittest.TestCase):
+class WorkflowTests(unittest.IsolatedAsyncioTestCase):
     def _structured_response(self, review_results: list[bool]):
-        def generate_structured(system_prompt, user_prompt, response_model):
+        async def generate_structured(system_prompt, user_prompt, response_model):
             del system_prompt, user_prompt
             if response_model is AnalysisOutput:
                 return AnalysisOutput(
@@ -38,9 +38,7 @@ class WorkflowTests(unittest.TestCase):
 
         return generate_structured
 
-    def test_workflow_reaches_finalize_when_review_passes(self):
-        text_responses = iter(["Final answer"])
-
+    async def test_workflow_reaches_finalize_when_review_passes(self):
         with (
             patch(
                 "app.agents.nodes.llm_service.generate_structured",
@@ -52,10 +50,10 @@ class WorkflowTests(unittest.TestCase):
             ) as generate_agent_decision,
             patch(
                 "app.agents.nodes.llm_service.generate_text",
-                side_effect=lambda **kwargs: next(text_responses),
+                return_value="Final answer",
             ) as generate_text,
         ):
-            result = invoke_workflow("Test request")
+            result = await invoke_workflow("Test request")
 
         self.assertEqual(result["final_answer"], "Final answer")
         self.assertTrue(result["review_passed"])
@@ -63,8 +61,15 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(generate_agent_decision.call_count, 1)
         self.assertEqual(generate_text.call_count, 1)
 
-    def test_revision_loop_stops_at_guardrail(self):
+    async def test_revision_loop_stops_at_guardrail(self):
         agent_responses = iter(["Initial draft", "Revision one", "Revision two"])
+
+        async def generate_agent_decision(**kwargs):
+            del kwargs
+            return AgentDecision(
+                content=next(agent_responses),
+                tool_calls=[],
+            )
 
         with (
             patch(
@@ -73,17 +78,14 @@ class WorkflowTests(unittest.TestCase):
             ),
             patch(
                 "app.agents.nodes.llm_service.generate_agent_decision",
-                side_effect=lambda **kwargs: AgentDecision(
-                    content=next(agent_responses),
-                    tool_calls=[],
-                ),
+                side_effect=generate_agent_decision,
             ) as generate_agent_decision,
             patch(
                 "app.agents.nodes.llm_service.generate_text",
                 return_value="Best final answer",
             ) as generate_text,
         ):
-            result = invoke_workflow("Test request")
+            result = await invoke_workflow("Test request")
 
         self.assertEqual(result["final_answer"], "Best final answer")
         self.assertFalse(result["review_passed"])
