@@ -7,7 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     app_name: str = "Enterprise AI Copilot"
-    app_version: str = "0.3.0"
+    app_version: str = "0.4.0"
 
     deepseek_api_key: str = Field(default="", alias="DEEPSEEK_API_KEY")
     deepseek_base_url: str = Field(
@@ -23,6 +23,11 @@ class Settings(BaseSettings):
         default=2,
         ge=0,
         alias="MAX_REVISION_COUNT",
+    )
+    max_tool_iterations: int = Field(
+        default=4,
+        ge=0,
+        alias="MAX_TOOL_ITERATIONS",
     )
     knowledge_top_k: int = Field(default=3, ge=1, alias="KNOWLEDGE_TOP_K")
     knowledge_min_score: float = Field(
@@ -47,6 +52,10 @@ class Settings(BaseSettings):
     @property
     def knowledge_index_path(self) -> Path:
         return self.backend_dir / "data" / "knowledge_index.json"
+
+    @property
+    def database_path(self) -> Path:
+        return self.backend_dir / "data" / "enterprise_ai_copilot.db"
 
     model_config = SettingsConfigDict(
         env_file=".env",

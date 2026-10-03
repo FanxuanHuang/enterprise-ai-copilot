@@ -30,6 +30,9 @@ frontend/.vite/
 
 # Generated local knowledge index
 backend/data/knowledge_index.json
+backend/data/enterprise_ai_copilot.db
+backend/data/enterprise_ai_copilot.db-shm
+backend/data/enterprise_ai_copilot.db-wal
 
 # IDE / OS
 .DS_Store

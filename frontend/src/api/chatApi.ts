@@ -4,13 +4,16 @@ interface ChatResponse {
   answer: string;
 }
 
-export async function sendChatMessage(message: string): Promise<string> {
+export async function sendChatMessage(
+  message: string,
+  sessionId?: string,
+): Promise<string> {
   const response = await fetch(`${API_BASE_URL}/api/chat`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ message }),
+    body: JSON.stringify({ message, session_id: sessionId }),
   });
 
   if (!response.ok) {
@@ -21,4 +24,3 @@ export async function sendChatMessage(message: string): Promise<string> {
   const data = (await response.json()) as ChatResponse;
   return data.answer;
 }
-

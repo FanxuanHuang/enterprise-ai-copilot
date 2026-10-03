@@ -1,4 +1,4 @@
-from typing import NotRequired, TypedDict
+from typing import Any, NotRequired, TypedDict
 
 
 class TaskAnalysis(TypedDict):
@@ -26,9 +26,37 @@ class RetrievedChunk(TypedDict):
     score: float
 
 
+class UserContext(TypedDict):
+    user_id: str
+
+
+class AgentToolCall(TypedDict):
+    tool_call_id: str
+    name: str
+    arguments: str
+
+
+class AgentToolResult(TypedDict):
+    tool_call_id: str
+    tool_name: str
+    ok: bool
+    data: dict[str, Any] | None
+    error: dict[str, str] | None
+
+
+class AgentStep(TypedDict):
+    step_type: str
+    summary: str
+
+
 class AgentState(TypedDict):
     user_input: str
     revision_count: int
+    tool_iteration_count: int
+    request_id: str
+    session_id: str
+    user_context: UserContext
+    conversation_history: list[dict[str, str]]
     needs_retrieval: NotRequired[bool]
     retrieval_query: NotRequired[str]
     analysis: NotRequired[TaskAnalysis]
@@ -41,3 +69,9 @@ class AgentState(TypedDict):
     knowledge_context: NotRequired[str]
     knowledge_sufficient: NotRequired[bool]
     sources: NotRequired[list[str]]
+    agent_messages: NotRequired[list[dict[str, Any]]]
+    current_tool_calls: NotRequired[list[AgentToolCall]]
+    tool_calls: NotRequired[list[AgentToolCall]]
+    tool_results: NotRequired[list[AgentToolResult]]
+    agent_steps: NotRequired[list[AgentStep]]
+    tool_limit_reached: NotRequired[bool]

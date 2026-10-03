@@ -15,6 +15,7 @@ function createMessage(role: ChatMessage['role'], content: string): ChatMessage 
 }
 
 export default function App() {
+  const [sessionId] = useState(() => crypto.randomUUID());
   const [messages, setMessages] = useState<ChatMessage[]>([
     createMessage('assistant', '你好，我是 Enterprise AI Copilot。你可以先问我一个问题。'),
   ]);
@@ -30,7 +31,7 @@ export default function App() {
     ]);
 
     try {
-      const answer = await sendChatMessage(message);
+      const answer = await sendChatMessage(message, sessionId);
       setMessages((currentMessages) => [
         ...currentMessages,
         createMessage('assistant', answer),
@@ -54,7 +55,7 @@ export default function App() {
             <p className="eyebrow">Enterprise AI Copilot</p>
             <h1>企业 AI 助手</h1>
           </div>
-          <span className="version-badge">V3</span>
+          <span className="version-badge">V4</span>
         </header>
 
         <MessageList messages={messages} isLoading={isLoading} />

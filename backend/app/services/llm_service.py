@@ -1,5 +1,6 @@
 import json
-from typing import TypeVar
+from dataclasses import dataclass
+from typing import Any, TypeVar
 
 from openai import APIError, OpenAI
 from pydantic import BaseModel, ValidationError
@@ -14,6 +15,19 @@ class LLMServiceError(Exception):
 StructuredResponse = TypeVar("StructuredResponse", bound=BaseModel)
 
 
+@dataclass(frozen=True)
+class LLMToolCall:
+    tool_call_id: str
+    name: str
+    arguments: str
+
+
+@dataclass(frozen=True)
+class AgentDecision:
+    content: str
+    tool_calls: list[LLMToolCall]
+
+
 class LLMService:
     def __init__(self) -> None:
         self.client = OpenAI(
@@ -23,7 +37,7 @@ class LLMService:
 
     def _create_completion(
         self,
-        messages: list[dict[str, str]],
+        messages: list[dict[str, Any]],
         *,
         response_format: dict[str, str] | None = None,
     ) -> str:
@@ -49,6 +63,49 @@ class LLMService:
             raise LLMServiceError("DeepSeek returned an empty response.")
 
         return answer
+
+    def generate_agent_decision(
+        self,
+        *,
+        system_prompt: str,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, object]],
+        allow_tools: bool,
+    ) -> AgentDecision:
+        if not settings.deepseek_api_key:
+            raise LLMServiceError("DEEPSEEK_API_KEY is not configured.")
+
+        request_options: dict[str, Any] = {
+            "model": settings.deepseek_model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                *messages,
+            ],
+            "tools": tools,
+            "tool_choice": "auto" if allow_tools else "none",
+        }
+        try:
+            response = self.client.chat.completions.create(**request_options)
+        except APIError as exc:
+            raise LLMServiceError("DeepSeek API request failed.") from exc
+        except Exception as exc:
+            raise LLMServiceError(
+                "Unexpected error while calling the LLM agent."
+            ) from exc
+
+        message = response.choices[0].message
+        tool_calls = [
+            LLMToolCall(
+                tool_call_id=tool_call.id,
+                name=tool_call.function.name,
+                arguments=tool_call.function.arguments,
+            )
+            for tool_call in (message.tool_calls or [])
+        ]
+        content = message.content or ""
+        if not content and not tool_calls:
+            raise LLMServiceError("DeepSeek returned an empty agent decision.")
+        return AgentDecision(content=content, tool_calls=tool_calls)
 
     def generate_text(self, system_prompt: str, user_prompt: str) -> str:
         return self._create_completion(

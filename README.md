@@ -2,7 +2,7 @@
 
 Enterprise AI Copilot 是一个分阶段构建的企业级 AI 助手求职作品集项目。
 
-当前 V3 在 V2 LangGraph Workflow 中加入了本地 Enterprise RAG：
+当前 V4 在 V3 Enterprise RAG 基础上加入了原生 Tool Calling、Agent Loop、SQLite 持久化、基础会话、权限检查和可观测性：
 
 ```text
 React + TypeScript
@@ -10,24 +10,30 @@ React + TypeScript
   -> FastAPI / Python
   -> LangGraph Workflow
   -> Local Enterprise Knowledge Retrieval
-  -> DeepSeek OpenAI-compatible API（各 Node 复用同一个 LLM Service）
+  -> DeepSeek OpenAI-compatible Tool Calling
+  -> Python Tool Dispatcher
+  -> Service / Repository / SQLite
   -> FastAPI
   -> React 展示回答
 ```
 
-V3 专注于 Document、Chunking、Embedding、Vector Store、Retrieval、Grounding 和来源追踪。保留 V2 的 Conditional Edge 与有限 revision loop；暂不包含 Tool Calling、MCP、Memory、Hybrid Search、Reranker、PostgreSQL、Docker、用户登录或 Multi-Agent。
+V4 保留 V1 API、V2 revision loop 和 V3 RAG，并让模型判断何时需要企业工具。模型只生成 Tool Call，真正的权限检查、参数校验、数据库查询和写入全部由 Python 完成。当前仍不包含 MCP、复杂长期 Memory、完整认证/RBAC、PostgreSQL、Docker、微服务或 Multi-Agent。
 
-## 当前 V3 架构
+## 当前 V4 架构
 
 - `frontend/`: React + TypeScript + Vite 聊天界面
 - `backend/`: FastAPI 后端服务
 - `backend/app/api/`: API 路由
-- `backend/app/core/`: 配置读取
+- `backend/app/core/`: 配置和请求可观测性
 - `backend/app/schemas/`: 请求和响应模型
-- `backend/app/services/`: LLM 调用逻辑
+- `backend/app/services/`: LLM、企业业务和会话服务
 - `backend/app/agents/`: Agent State、Nodes 和 LangGraph Workflow
+- `backend/app/tools/`: Tool Schema、Python Handler 和 Dispatcher/Registry
+- `backend/app/repositories/`: SQLite 数据访问层
+- `backend/app/db/`: 数据库连接、表结构和 demo data 初始化
 - `backend/knowledge_base/`: 虚构企业政策 Markdown 文档
 - `backend/data/knowledge_index.json`: 本地生成的持久化向量索引（不提交 Git）
+- `backend/data/enterprise_ai_copilot.db`: 自动生成的 SQLite 数据库（不提交 Git）
 
 ## Workflow
 
@@ -36,7 +42,15 @@ START
   -> Analyze
   -> Plan
   -> Knowledge Retrieval
-  -> Execute
+  -> Agent Decide
+       | tool_calls
+       v
+     Tool Execution
+       |
+       +----> Agent Decide
+       |
+       | draft
+       v
   -> Review
        | passed == true
        v
@@ -45,7 +59,7 @@ START
 Review
   | passed == false and revision_count < MAX_REVISION_COUNT
   v
-Execute -> Review
+Prepare Revision -> Agent Decide
 
 Review
   | revision_count >= MAX_REVISION_COUNT
@@ -55,7 +69,9 @@ Finalize -> END
 
 默认 `MAX_REVISION_COUNT=2`，因此最多执行一次初稿和两次修订。达到上限后会用当前最佳 draft 完成 Finalize，避免无限循环。
 
-Knowledge Retrieval 只查询预先建立的索引。Review 失败时仍直接回到 Execute，复用同一批检索结果，不重新生成文档 Embedding。
+默认 `MAX_TOOL_ITERATIONS=4`。每次 `Agent Decide -> Tool Execution -> Agent Decide` 计为一轮；达到上限后禁止执行新 Tool，并根据已有 observation 安全结束。`revision_count` 与 `tool_iteration_count` 完全独立。
+
+Knowledge Retrieval 只查询预先建立的索引。Review 失败时复用同一批 RAG 结果和已有 Tool observation，不重新生成文档 Embedding，也不默认重复已成功的写操作。
 
 ### AgentState
 
@@ -65,16 +81,56 @@ Knowledge Retrieval 只查询预先建立的索引。Review 失败时仍直接�
 - `needs_retrieval`: 是否需要企业内部知识
 - `retrieval_query`: 面向知识库的独立检索查询
 - `retrieved_chunks`: Top K 结果，包含正文、source、section 和 score
-- `knowledge_context`: 传给 Execute 的格式化企业知识
+- `knowledge_context`: 传给 Agent Decide 的格式化企业知识
 - `knowledge_sufficient`: 最高相关度是否达到可信阈值
 - `sources`: 最终答案展示的去重文档来源
-- `draft`: Execute 生成或修订的草稿
+- `request_id`、`session_id`、`user_context`: 请求和调用者上下文
+- `conversation_history`: 同一 session 的近期聊天记录
+- `agent_messages`: 发送给 Tool Calling API 的合法消息序列
+- `current_tool_calls`: 本轮待执行调用
+- `tool_calls`、`tool_results`: 可审计的调用和 observation
+- `agent_steps`: 不包含隐藏推理的执行轨迹摘要
+- `tool_iteration_count`、`tool_limit_reached`: Tool Loop Guardrail
+- `draft`: Agent Decide 生成或修订的草稿
 - `review_result`: Review 的总结、问题和改进指令
 - `review_passed`: Conditional Edge 使用的布尔判断
 - `revision_count`: 已执行的修订次数，不包含初稿
 - `final_answer`: Finalize 返回给 API 的最终答案
 
 Analyze、Plan 和 Review 使用 DeepSeek JSON mode，并通过 Pydantic Model 验证结构；Conditional Edge 直接读取布尔值，不依赖字符串关键词。
+
+## Tool Calling
+
+V4 提供三个工具：
+
+- `get_employee_info(employee_id)`：查询员工部门、职级和角色。
+- `get_application_status(application_id)`：查询企业申请状态。
+- `create_business_trip_application(employee_id, destination, days, reason?)`：创建并持久化出差申请。
+
+`ToolRegistry` 为 DeepSeek 提供 OpenAI-compatible JSON Schema。Dispatcher 按 tool name 查找定义、解析 JSON、通过 Pydantic 校验参数、调用 Python handler，并将统一的 `ToolResult` 作为 `role=tool` 消息返回模型。未知工具、参数错误、not-found、无权限和数据库异常都会返回结构化错误，不会让单个 Tool 直接击穿 Agent Loop。
+
+同一轮工作流内，如果模型重复提交参数完全相同且此前已经成功的 Tool Call，执行节点会复用原结果，避免重复写入。Review 和 Finalize 同时接收 Tool Results；最终答案必须删除数据库结果中不存在的日期、费用、状态、编号等业务字段。
+
+## SQLite 与权限
+
+应用启动或首次调用时会幂等创建：
+
+- `employees`：员工、部门、职级和演示角色。
+- `applications`：出差申请和状态。
+- `conversations`：基础 session 元数据。
+- `messages`：user/assistant 聊天记录。
+
+预置 `E1001 / 研发 / P6`、manager/admin 演示账号以及 `TRIP-2026-001 / 审批中`。employee 只能访问自己及自己的申请；manager/admin 可以访问其他员工。权限在 Python Service 层执行，不能由 LLM 绕过。
+
+`user_id` 只是 V4 本地演示身份，不是登录认证。生产环境必须由可信认证中间件注入用户身份，不能信任客户端自行提交的 `user_id`。
+
+## RAG 与 Tool 的边界
+
+- RAG 获取政策、手册和制度等相对静态的内部知识。
+- Tool 获取实时业务数据或执行有副作用的企业操作。
+- “远程办公政策是什么”只走 RAG。
+- “申请 TRIP-2026-001 的状态”走 Tool。
+- “根据差旅政策创建申请”先 RAG，再由 Agent 调用 Tool。
 
 ## RAG 技术方案
 
@@ -131,19 +187,19 @@ user question
   -> cosine similarity
   -> Top K chunks
   -> relevance threshold
-  -> grounded context for Execute
+  -> grounded context for Agent Decide
   -> DeepSeek answer
   -> Sources
 ```
 
-默认 `KNOWLEDGE_TOP_K=3`，`KNOWLEDGE_MIN_SCORE=0.5`。Top K 控制候选数量；只有达到阈值的候选会进入 Execute context 和最终 Sources。如果没有候选达到阈值，Execute 不调用生成模型补写政策，而是返回知识库依据不足。
+默认 `KNOWLEDGE_TOP_K=3`，`KNOWLEDGE_MIN_SCORE=0.5`。Top K 控制候选数量；只有达到阈值的候选会进入 Agent Decide context 和最终 Sources。如果没有候选达到阈值，Agent 不调用生成模型补写政策，而是返回知识库依据不足。
 
 ### Retrieval 与 Generation
 
 - Retrieval 负责“找事实”：从已有企业文档中返回相关原文和 metadata。
 - Generation 负责“组织回答”：根据用户问题、计划和检索 context 生成自然语言。
 - Analyze 对企业制度、流程、员工手册和内部 FAQ 等公司专有事实设置 `needs_retrieval=true`；一般写作、推理或公共知识问题不检索。
-- Execute 的 prompt 明确规定企业内部事实只能来自 `knowledge_context`，不得用模型通用知识补全。
+- Agent Decide 的 prompt 明确规定企业内部事实只能来自 `knowledge_context`，不得用模型通用知识补全。
 
 ## 前端启动方法
 
@@ -217,6 +273,7 @@ DEEPSEEK_API_KEY=your_deepseek_api_key_here
 
 ```text
 MAX_REVISION_COUNT=2
+MAX_TOOL_ITERATIONS=4
 KNOWLEDGE_TOP_K=3
 KNOWLEDGE_MIN_SCORE=0.5
 EMBEDDING_MODEL=BAAI/bge-small-zh-v1.5
@@ -256,6 +313,16 @@ POST http://localhost:8000/api/chat
 }
 ```
 
+V4 可选上下文：
+
+```json
+{
+  "message": "查询员工 E1001 的部门和职级",
+  "session_id": "browser-session-001",
+  "user_id": "E1001"
+}
+```
+
 响应示例：
 
 ```json
@@ -264,7 +331,11 @@ POST http://localhost:8000/api/chat
 }
 ```
 
-请求和响应格式与 V1 保持一致，但后端现在会运行完整 V3 Workflow。检索成功时，`answer` 文本末尾会包含简单的 `Sources` 列表。
+只传 `message` 的 V1 请求和 `answer` 响应保持兼容。`session_id` 和 `user_id` 均有默认行为；前端会在当前页面生命周期内复用一个 session。检索成功时，`answer` 文本末尾会包含简单的 `Sources` 列表。
+
+## 可观测性
+
+日志包含 request ID、workflow stage、检索查询、来源、Tool 名称、参数字段名、Tool 状态、两个循环计数和延迟。日志不记录 API Key、Secret、完整员工记录或完整任意工具载荷。HTTP 响应同时返回 `X-Request-ID`。
 
 ## 验证
 
@@ -302,14 +373,29 @@ enterprise-ai-copilot/
 │   │   │   └── workflow.py
 │   │   ├── core/
 │   │   │   ├── __init__.py
-│   │   │   └── config.py
+│   │   │   ├── config.py
+│   │   │   └── observability.py
+│   │   ├── db/
+│   │   │   ├── database.py
+│   │   │   └── models.py
+│   │   ├── repositories/
+│   │   │   ├── application_repository.py
+│   │   │   ├── conversation_repository.py
+│   │   │   └── employee_repository.py
 │   │   ├── schemas/
 │   │   │   ├── __init__.py
 │   │   │   └── chat.py
 │   │   ├── services/
 │   │   │   ├── __init__.py
+│   │   │   ├── conversation_service.py
+│   │   │   ├── enterprise_services.py
 │   │   │   ├── knowledge_service.py
 │   │   │   └── llm_service.py
+│   │   ├── tools/
+│   │   │   ├── application_tools.py
+│   │   │   ├── employee_tools.py
+│   │   │   ├── registry.py
+│   │   │   └── schemas.py
 │   │   ├── scripts/
 │   │   │   └── build_knowledge_index.py
 │   │   ├── __init__.py
@@ -320,12 +406,16 @@ enterprise-ai-copilot/
 │   │   ├── remote_work_policy.md
 │   │   └── travel_policy.md
 │   ├── data/
-│   │   └── knowledge_index.json  # generated, gitignored
+│   │   ├── knowledge_index.json          # generated, gitignored
+│   │   └── enterprise_ai_copilot.db      # generated, gitignored
 │   ├── tests/
 │   │   ├── __init__.py
 │   │   ├── test_api.py
+│   │   ├── test_database.py
 │   │   ├── test_knowledge_service.py
 │   │   ├── test_rag_workflow.py
+│   │   ├── test_tool_workflow.py
+│   │   ├── test_tools.py
 │   │   └── test_workflow.py
 │   ├── .env.example
 │   └── requirements.txt

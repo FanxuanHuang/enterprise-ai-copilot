@@ -4,6 +4,7 @@ from unittest.mock import patch
 from app.agents.nodes import AnalysisOutput, PlanOutput, ReviewOutput
 from app.agents.workflow import invoke_workflow
 from app.services.knowledge_service import SearchResult
+from app.services.llm_service import AgentDecision
 
 
 class RagWorkflowTests(unittest.TestCase):
@@ -40,10 +41,13 @@ class RagWorkflowTests(unittest.TestCase):
     def test_workflow_passes_retrieved_context_to_execute(self):
         text_prompts: list[str] = []
 
-        def generate_text(system_prompt, user_prompt):
-            del system_prompt
-            text_prompts.append(user_prompt)
-            return "新员工入职满 90 个自然日后可以申请。"
+        def generate_agent_decision(system_prompt, messages, tools, allow_tools):
+            del system_prompt, tools, allow_tools
+            text_prompts.append(messages[0]["content"])
+            return AgentDecision(
+                content="新员工入职满 90 个自然日后可以申请。",
+                tool_calls=[],
+            )
 
         result = SearchResult(
             content="新员工完成入职满 90 个自然日后，才可以申请常规远程办公。",
@@ -57,8 +61,12 @@ class RagWorkflowTests(unittest.TestCase):
                 side_effect=self._structured_response,
             ),
             patch(
+                "app.agents.nodes.llm_service.generate_agent_decision",
+                side_effect=generate_agent_decision,
+            ),
+            patch(
                 "app.agents.nodes.llm_service.generate_text",
-                side_effect=generate_text,
+                return_value="新员工入职满 90 个自然日后可以申请。",
             ),
             patch(
                 "app.agents.nodes.knowledge_service.search",
@@ -84,6 +92,9 @@ class RagWorkflowTests(unittest.TestCase):
                 "app.agents.nodes.llm_service.generate_structured",
                 side_effect=self._structured_response,
             ),
+            patch(
+                "app.agents.nodes.llm_service.generate_agent_decision"
+            ) as generate_agent_decision,
             patch("app.agents.nodes.llm_service.generate_text") as generate_text,
             patch(
                 "app.agents.nodes.knowledge_service.search",
@@ -93,6 +104,7 @@ class RagWorkflowTests(unittest.TestCase):
             state = invoke_workflow("公司的宠物保险政策是什么？")
 
         generate_text.assert_not_called()
+        generate_agent_decision.assert_not_called()
         self.assertFalse(state["knowledge_sufficient"])
         self.assertEqual(state["sources"], [])
         self.assertIn("没有找到足够依据", state["final_answer"])
