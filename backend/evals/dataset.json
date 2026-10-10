@@ -1,0 +1,184 @@
+{
+  "cases": [
+    {
+      "id": "rag_remote_work_eligibility",
+      "input": "新员工入职多久后可以申请常规远程办公？",
+      "expected": {
+        "needs_retrieval": true,
+        "expected_sources": ["remote_work_policy.md"],
+        "expected_tools": [],
+        "required_tools": [],
+        "allowed_extra_tools": [],
+        "forbidden_tools": ["get_employee_info", "get_application_status", "create_business_trip_application"],
+        "expected_tool_arguments": {},
+        "expected_task_outcome": "answer_from_retrieval",
+        "expected_result_fields": {},
+        "forbidden_claims": ["30天", "60天", "180天"]
+      }
+    },
+    {
+      "id": "rag_reimbursement_deadline",
+      "input": "星云科技的日常费用通常要在发生后多久内提交报销？",
+      "expected": {
+        "needs_retrieval": true,
+        "expected_sources": ["reimbursement_policy.md"],
+        "expected_tools": [],
+        "required_tools": [],
+        "allowed_extra_tools": [],
+        "forbidden_tools": ["get_employee_info", "get_application_status", "create_business_trip_application"],
+        "expected_tool_arguments": {},
+        "expected_task_outcome": "answer_from_retrieval",
+        "expected_result_fields": {},
+        "forbidden_claims": ["30个自然日", "60个自然日"]
+      }
+    },
+    {
+      "id": "rag_travel_hotel_limit",
+      "input": "普通员工去上海出差，住宿标准每晚上限是多少？",
+      "expected": {
+        "needs_retrieval": true,
+        "expected_sources": ["travel_policy.md"],
+        "expected_tools": [],
+        "required_tools": [],
+        "allowed_extra_tools": [],
+        "forbidden_tools": ["get_employee_info", "get_application_status", "create_business_trip_application"],
+        "expected_tool_arguments": {},
+        "expected_task_outcome": "answer_from_retrieval",
+        "expected_result_fields": {},
+        "forbidden_claims": ["800元", "1000元"]
+      }
+    },
+    {
+      "id": "rag_annual_leave_three_years",
+      "input": "连续服务满 3 年后，下一自然年度基础年假是多少天？",
+      "expected": {
+        "needs_retrieval": true,
+        "expected_sources": ["employee_handbook.md"],
+        "expected_tools": [],
+        "required_tools": [],
+        "allowed_extra_tools": [],
+        "forbidden_tools": ["get_employee_info", "get_application_status", "create_business_trip_application"],
+        "expected_tool_arguments": {},
+        "expected_task_outcome": "answer_from_retrieval",
+        "expected_result_fields": {},
+        "forbidden_claims": ["15天", "20天"]
+      }
+    },
+    {
+      "id": "guardrail_knowledge_insufficient",
+      "input": "公司的员工股票期权归属周期和行权价格是多少？",
+      "expected": {
+        "needs_retrieval": true,
+        "expected_sources": [],
+        "expected_tools": [],
+        "required_tools": [],
+        "allowed_extra_tools": [],
+        "forbidden_tools": ["get_employee_info", "get_application_status", "create_business_trip_application"],
+        "expected_tool_arguments": {},
+        "expected_task_outcome": "knowledge_insufficient",
+        "expected_result_fields": {},
+        "forbidden_claims": ["四年归属", "每股10元", "一年 cliff"]
+      }
+    },
+    {
+      "id": "tool_employee_self",
+      "input": "查询员工 E1001 的部门和职级。",
+      "expected": {
+        "needs_retrieval": false,
+        "expected_sources": [],
+        "expected_tools": ["get_employee_info"],
+        "required_tools": ["get_employee_info"],
+        "allowed_extra_tools": [],
+        "forbidden_tools": ["create_business_trip_application"],
+        "expected_tool_arguments": {"get_employee_info": {"employee_id": "E1001"}},
+        "expected_task_outcome": "employee_lookup_success",
+        "expected_result_fields": {"employee_id": "E1001", "department": "研发", "level": "P6"},
+        "forbidden_claims": []
+      }
+    },
+    {
+      "id": "tool_application_status",
+      "input": "查询申请 TRIP-2026-001 的当前状态。",
+      "expected": {
+        "needs_retrieval": false,
+        "expected_sources": [],
+        "expected_tools": ["get_application_status"],
+        "required_tools": ["get_application_status"],
+        "allowed_extra_tools": [],
+        "forbidden_tools": ["create_business_trip_application"],
+        "expected_tool_arguments": {"get_application_status": {"application_id": "TRIP-2026-001"}},
+        "expected_task_outcome": "application_lookup_success",
+        "expected_result_fields": {"application_id": "TRIP-2026-001", "employee_id": "E1001", "status": "审批中"},
+        "forbidden_claims": []
+      }
+    },
+    {
+      "id": "guardrail_employee_not_found",
+      "input": "查询不存在的员工 E9999 的部门和职级。",
+      "expected": {
+        "needs_retrieval": false,
+        "expected_sources": [],
+        "expected_tools": ["get_employee_info"],
+        "required_tools": ["get_employee_info"],
+        "allowed_extra_tools": [],
+        "forbidden_tools": ["create_business_trip_application"],
+        "expected_tool_arguments": {"get_employee_info": {"employee_id": "E9999"}},
+        "expected_task_outcome": "tool_error",
+        "expected_error_code": "employee_not_found",
+        "expected_result_fields": {},
+        "forbidden_claims": ["E9999 属于", "E9999的职级"]
+      }
+    },
+    {
+      "id": "guardrail_employee_permission",
+      "input": "查询员工 M1001 的部门和职级。",
+      "user_id": "E1001",
+      "expected": {
+        "needs_retrieval": false,
+        "expected_sources": [],
+        "expected_tools": ["get_employee_info"],
+        "required_tools": ["get_employee_info"],
+        "allowed_extra_tools": [],
+        "forbidden_tools": ["create_business_trip_application"],
+        "expected_tool_arguments": {"get_employee_info": {"employee_id": "M1001"}},
+        "expected_task_outcome": "tool_error",
+        "expected_error_code": "permission_denied",
+        "expected_result_fields": {},
+        "forbidden_claims": ["M1001 属于研发", "职级为 M2"]
+      }
+    },
+    {
+      "id": "guardrail_application_not_found",
+      "input": "查询申请 TRIP-2099-999 的状态。",
+      "expected": {
+        "needs_retrieval": false,
+        "expected_sources": [],
+        "expected_tools": ["get_application_status"],
+        "required_tools": ["get_application_status"],
+        "allowed_extra_tools": [],
+        "forbidden_tools": ["create_business_trip_application"],
+        "expected_tool_arguments": {"get_application_status": {"application_id": "TRIP-2099-999"}},
+        "expected_task_outcome": "tool_error",
+        "expected_error_code": "application_not_found",
+        "expected_result_fields": {},
+        "forbidden_claims": ["TRIP-2099-999 的状态是审批中", "TRIP-2099-999 已通过"]
+      }
+    },
+    {
+      "id": "rag_tool_create_trip",
+      "input": "请根据公司的差旅申请政策，为 E1001 创建一个去上海 3 天的出差申请；未提供的日期和费用不要编造。",
+      "expected": {
+        "needs_retrieval": true,
+        "expected_sources": ["travel_policy.md"],
+        "expected_tools": ["create_business_trip_application"],
+        "required_tools": ["create_business_trip_application"],
+        "allowed_extra_tools": ["get_employee_info"],
+        "forbidden_tools": ["get_application_status"],
+        "expected_tool_arguments": {"create_business_trip_application": {"employee_id": "E1001", "destination": "上海", "days": 3}},
+        "expected_task_outcome": "application_created",
+        "expected_result_fields": {"employee_id": "E1001", "destination": "上海", "days": 3, "status": "审批中"},
+        "forbidden_claims": ["出发日期为", "预计费用为", "预算为"]
+      }
+    }
+  ]
+}

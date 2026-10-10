@@ -40,6 +40,7 @@ class SearchResult:
     source: str
     section: str
     score: float
+    chunk_index: int = 0
 
 
 class EmbeddingModel(Protocol):
@@ -282,6 +283,7 @@ class KnowledgeService:
                     source=chunk["source"],
                     section=chunk["section"],
                     score=score,
+                    chunk_index=chunk["chunk_index"],
                 )
             )
 

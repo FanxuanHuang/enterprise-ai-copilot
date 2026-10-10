@@ -15,12 +15,14 @@ from app.agents.nodes import (
     review_node,
     tool_execution_node,
 )
+from app.agents.runtime import reset_runtime_overrides, set_runtime_overrides
 from app.agents.state import AgentState
 from app.core.config import settings
 from app.core.observability import reset_request_id, set_request_id
-from app.db.database import database
+from app.db.database import Database, database
 from app.services.llm_service import LLMServiceError
 from app.services.knowledge_service import KnowledgeServiceError
+from app.tools.registry import build_tool_registry, tool_registry
 
 
 class WorkflowExecutionError(Exception):
@@ -95,6 +97,7 @@ async def invoke_workflow(
     user_id: str = "E1001",
     request_id: str | None = None,
     conversation_history: list[dict[str, str]] | None = None,
+    target_database: Database | None = None,
 ) -> AgentState:
     resolved_request_id = request_id or str(uuid4())
     initial_state: AgentState = {
@@ -106,9 +109,18 @@ async def invoke_workflow(
         "user_context": {"user_id": user_id},
         "conversation_history": conversation_history or [],
     }
+    active_database = target_database or database
+    active_tool_registry = (
+        build_tool_registry(active_database) if target_database else tool_registry
+    )
     token = set_request_id(resolved_request_id)
+    runtime_tokens = (
+        set_runtime_overrides(active_tool_registry)
+        if target_database is not None
+        else None
+    )
     try:
-        await asyncio.to_thread(database.initialize)
+        await asyncio.to_thread(active_database.initialize)
         return cast(AgentState, await workflow.ainvoke(initial_state))
     except LLMServiceError:
         raise
@@ -117,6 +129,8 @@ async def invoke_workflow(
     except Exception as exc:
         raise WorkflowExecutionError("The agent workflow failed.") from exc
     finally:
+        if runtime_tokens is not None:
+            reset_runtime_overrides(runtime_tokens)
         reset_request_id(token)
 
 

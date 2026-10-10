@@ -1,4 +1,5 @@
 import json
+import logging
 from dataclasses import dataclass
 from typing import Any, TypeVar
 
@@ -6,6 +7,9 @@ from openai import APIError, AsyncOpenAI
 from pydantic import BaseModel, ValidationError
 
 from app.core.config import settings
+
+
+logger = logging.getLogger(__name__)
 
 
 class LLMServiceError(Exception):
@@ -33,6 +37,8 @@ class LLMService:
         self.client = AsyncOpenAI(
             api_key=settings.deepseek_api_key,
             base_url=settings.deepseek_base_url,
+            timeout=settings.deepseek_timeout_seconds,
+            max_retries=settings.deepseek_max_retries,
         )
 
     async def _create_completion(
@@ -54,8 +60,16 @@ class LLMService:
 
             response = await self.client.chat.completions.create(**request_options)
         except APIError as exc:
+            logger.warning(
+                "DeepSeek API request failed: error_type=%s",
+                type(exc).__name__,
+            )
             raise LLMServiceError("DeepSeek API request failed.") from exc
         except Exception as exc:
+            logger.exception(
+                "Unexpected DeepSeek request error: error_type=%s",
+                type(exc).__name__,
+            )
             raise LLMServiceError("Unexpected error while calling the LLM.") from exc
 
         answer = response.choices[0].message.content
@@ -87,8 +101,16 @@ class LLMService:
         try:
             response = await self.client.chat.completions.create(**request_options)
         except APIError as exc:
+            logger.warning(
+                "DeepSeek agent request failed: error_type=%s",
+                type(exc).__name__,
+            )
             raise LLMServiceError("DeepSeek API request failed.") from exc
         except Exception as exc:
+            logger.exception(
+                "Unexpected DeepSeek agent error: error_type=%s",
+                type(exc).__name__,
+            )
             raise LLMServiceError(
                 "Unexpected error while calling the LLM agent."
             ) from exc

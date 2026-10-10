@@ -207,7 +207,7 @@ user question
   -> Sources
 ```
 
-默认 `KNOWLEDGE_TOP_K=3`，`KNOWLEDGE_MIN_SCORE=0.5`。Top K 控制候选数量；只有达到阈值的候选会进入 Agent Decide context 和最终 Sources。如果没有候选达到阈值，Agent 不调用生成模型补写政策，而是返回知识库依据不足。
+默认 `KNOWLEDGE_TOP_K=3`，`KNOWLEDGE_MIN_SCORE=0.55`。Top K 控制候选数量；只有达到阈值的候选会进入 Agent Decide context 和最终 Sources。如果没有候选达到阈值，Agent 不调用生成模型补写政策，而是返回知识库依据不足。该阈值来自固定评测集上的 0.50 / 0.55 / 0.60 / 0.65 本地扫描；0.55 在排除知识库外问题的同时，为正常 RAG 召回保留了最大余量。
 
 ### Retrieval 与 Generation
 
@@ -289,8 +289,10 @@ DEEPSEEK_API_KEY=your_deepseek_api_key_here
 ```text
 MAX_REVISION_COUNT=2
 MAX_TOOL_ITERATIONS=4
+DEEPSEEK_TIMEOUT_SECONDS=30
+DEEPSEEK_MAX_RETRIES=1
 KNOWLEDGE_TOP_K=3
-KNOWLEDGE_MIN_SCORE=0.5
+KNOWLEDGE_MIN_SCORE=0.55
 EMBEDDING_MODEL=BAAI/bge-small-zh-v1.5
 ```
 
@@ -352,13 +354,50 @@ V4 可选上下文：
 
 日志包含 request ID、workflow stage、检索查询、来源、Tool 名称、参数字段名、Tool 状态、两个循环计数和延迟。日志不记录 API Key、Secret、完整员工记录或完整任意工具载荷。HTTP 响应同时返回 `X-Request-ID`。
 
+## Agent Evaluation Harness
+
+`backend/evals/` 提供一套与普通单元测试分离的固定评测集。它直接调用现有 async LangGraph 工作流，并从返回的 `AgentState` 收集检索、Tool、循环、最终答案和延迟 trace。规则评分负责检索、Tool 选择、关键参数、真实 Tool Result / 数据库状态和 Guardrail；DeepSeek Judge 只评估自然语言完整性、grounding、幻觉和矛盾。
+
+每个 case 都使用单独创建和 seed 的临时 SQLite 数据库。写 Tool 产生的申请只存在于该 case 的临时目录中，不会写入 `backend/data/enterprise_ai_copilot.db`。
+
+从 `backend/` 目录运行完整评测（会真实调用 DeepSeek，包括 Judge）：
+
+```bash
+.venv/bin/python -m evals.run_evals
+```
+
+成本受控运行方式：
+
+```bash
+# 跳过额外的 Judge 调用，但 Agent 工作流仍会真实调用 DeepSeek
+.venv/bin/python -m evals.run_evals --no-judge
+
+# 只运行一个固定 case
+.venv/bin/python -m evals.run_evals --case tool_employee_self
+
+# 只运行数据集中的前 3 个 case
+.venv/bin/python -m evals.run_evals --limit 3
+```
+
+普通测试不会导入并执行评测入口，也不会真实调用 DeepSeek。
+
+阈值诊断只运行本地 embedding 检索，不调用 DeepSeek：
+
+```bash
+.venv/bin/python -m evals.threshold_scan
+```
+
+评测 trace 会显示 retrieval query，以及每个 Top K chunk 的 source、section、`chunk_index` 和 score。Tool Selection 使用 `required_tools`、`allowed_extra_tools`、`forbidden_tools`，需要时可用 `tool_order` 增加顺序约束；旧 `expected_tools` 数据仍保持严格列表匹配。
+
+DeepSeek client 默认设置 `DEEPSEEK_TIMEOUT_SECONDS=30`、`DEEPSEEK_MAX_RETRIES=1`。SDK 只对连接/超时、408、409、429 和 5xx 等可重试错误进行有限重试；其他 4xx 会直接失败。异常仍转换为原有 `LLMServiceError`，同时记录安全的错误类型日志。
+
 ## 验证
 
 后端：
 
 ```bash
 cd backend
-.venv/bin/python -m compileall app tests
+.venv/bin/python -m compileall app evals tests
 .venv/bin/python -m unittest discover -s tests -v
 .venv/bin/python -m pip check
 .venv/bin/python -c "from app.main import app; print(app.title, app.version)"
@@ -384,6 +423,7 @@ enterprise-ai-copilot/
 │   │   ├── agents/
 │   │   │   ├── __init__.py
 │   │   │   ├── nodes.py
+│   │   │   ├── runtime.py
 │   │   │   ├── state.py
 │   │   │   └── workflow.py
 │   │   ├── core/
@@ -415,6 +455,14 @@ enterprise-ai-copilot/
 │   │   │   └── build_knowledge_index.py
 │   │   ├── __init__.py
 │   │   └── main.py
+│   ├── evals/
+│   │   ├── __init__.py
+│   │   ├── dataset.json
+│   │   ├── judge.py
+│   │   ├── models.py
+│   │   ├── run_evals.py
+│   │   ├── scorers.py
+│   │   └── threshold_scan.py
 │   ├── knowledge_base/
 │   │   ├── employee_handbook.md
 │   │   ├── reimbursement_policy.md
@@ -427,6 +475,7 @@ enterprise-ai-copilot/
 │   │   ├── __init__.py
 │   │   ├── test_api.py
 │   │   ├── test_database.py
+│   │   ├── test_evals.py
 │   │   ├── test_knowledge_service.py
 │   │   ├── test_rag_workflow.py
 │   │   ├── test_tool_workflow.py

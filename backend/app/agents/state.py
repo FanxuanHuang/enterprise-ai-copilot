@@ -24,6 +24,7 @@ class RetrievedChunk(TypedDict):
     source: str
     section: str
     score: float
+    chunk_index: int
 
 
 class UserContext(TypedDict):

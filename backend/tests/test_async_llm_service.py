@@ -8,6 +8,17 @@ from app.services.llm_service import LLMService
 
 
 class AsyncLLMServiceTests(unittest.IsolatedAsyncioTestCase):
+    def test_client_uses_bounded_timeout_and_retries(self):
+        with (
+            patch.object(settings, "deepseek_api_key", "test-key"),
+            patch.object(settings, "deepseek_timeout_seconds", 12.0),
+            patch.object(settings, "deepseek_max_retries", 1),
+        ):
+            service = LLMService()
+
+        self.assertEqual(service.client.timeout, 12.0)
+        self.assertEqual(service.client.max_retries, 1)
+
     async def test_independent_llm_waits_can_progress_concurrently(self):
         active_requests = 0
         max_active_requests = 0

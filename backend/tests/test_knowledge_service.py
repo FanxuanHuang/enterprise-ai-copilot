@@ -82,6 +82,7 @@ class KnowledgeServiceTests(unittest.TestCase):
         self.assertEqual(len(results), 3)
         self.assertEqual(results[0].source, "remote_work_policy.md")
         self.assertEqual(results[0].section, "申请资格")
+        self.assertIsInstance(results[0].chunk_index, int)
         self.assertGreater(results[0].score, 0.0)
 
     def test_chunk_overlap_preserves_boundary_context(self):

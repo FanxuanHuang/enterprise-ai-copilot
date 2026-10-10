@@ -15,6 +15,17 @@ class Settings(BaseSettings):
         alias="DEEPSEEK_BASE_URL",
     )
     deepseek_model: str = Field(default="deepseek-chat", alias="DEEPSEEK_MODEL")
+    deepseek_timeout_seconds: float = Field(
+        default=30.0,
+        gt=0,
+        alias="DEEPSEEK_TIMEOUT_SECONDS",
+    )
+    deepseek_max_retries: int = Field(
+        default=1,
+        ge=0,
+        le=5,
+        alias="DEEPSEEK_MAX_RETRIES",
+    )
     frontend_origin: str = Field(
         default="http://localhost:5173",
         alias="FRONTEND_ORIGIN",
@@ -31,7 +42,7 @@ class Settings(BaseSettings):
     )
     knowledge_top_k: int = Field(default=3, ge=1, alias="KNOWLEDGE_TOP_K")
     knowledge_min_score: float = Field(
-        default=0.5,
+        default=0.55,
         ge=-1.0,
         le=1.0,
         alias="KNOWLEDGE_MIN_SCORE",

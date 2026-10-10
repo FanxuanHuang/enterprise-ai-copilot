@@ -5,6 +5,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from app.agents.runtime import get_tool_registry
 from app.agents.state import AgentState, PlanStep, ReviewResult, TaskAnalysis
 from app.core.config import settings
 from app.core.observability import log_latency
@@ -141,6 +142,7 @@ async def knowledge_retrieval_node(state: AgentState) -> dict[str, object]:
             "source": result.source,
             "section": result.section,
             "score": round(result.score, 4),
+            "chunk_index": result.chunk_index,
         }
         for result in results
     ]
@@ -239,10 +241,11 @@ async def agent_decide_node(state: AgentState) -> dict[str, object]:
         "dates, costs, budgets, statuses, identifiers, or other business-record "
         "fields that are absent from successful tool results."
     )
+    active_tool_registry = get_tool_registry(tool_registry)
     decision = await llm_service.generate_agent_decision(
         system_prompt=system_prompt,
         messages=messages,
-        tools=tool_registry.schemas(),
+        tools=active_tool_registry.schemas(),
         allow_tools=allow_tools,
     )
     current_tool_calls = [
@@ -322,6 +325,7 @@ async def tool_execution_node(state: AgentState) -> dict[str, object]:
         next_iteration,
         state["revision_count"],
     )
+    active_tool_registry = get_tool_registry(tool_registry)
     context = ToolExecutionContext(
         user_id=state["user_context"]["user_id"],
         request_id=state["request_id"],
@@ -366,7 +370,7 @@ async def tool_execution_node(state: AgentState) -> dict[str, object]:
             )
         else:
             result = await asyncio.to_thread(
-                tool_registry.dispatch,
+                active_tool_registry.dispatch,
                 tool_call_id=tool_call["tool_call_id"],
                 tool_name=tool_call["name"],
                 arguments_json=tool_call["arguments"],
